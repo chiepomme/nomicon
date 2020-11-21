@@ -405,48 +405,41 @@ link アトリビュートは現在のところ 2通りの書き方ができま�
 2つ目の例の `bar` は、リンクするネイティブライブラリのタイプを表します。
 ネイティブライブラリのタイプは、現在のところ、以下の 3つが存在します：
 
-* 動的（Dynamic） - `#[link(name = "readline")]`
-* 静的（Static） - `#[link(name = "my_build_dependency", kind = "static")]`
-* フレームワーク（Frameworks） - `#[link(name = "CoreFoundation", kind = "framework")]`
+* ダイナミック（動的） - `#[link(name = "readline")]`
+* スタティック（静的） - `#[link(name = "my_build_dependency", kind = "static")]`
+* フレームワーク） - `#[link(name = "CoreFoundation", kind = "framework")]`
 
 framework は MacOS ターゲットでのみ有効です。
 
 `kind` の値によって、ネイティブライブラリがどのようにリンクされるかが変わります。
 
-The different `kind` values are meant to differentiate how the native library
-participates in linkage.
+リンクの観点から見ると、Rust のコンパイラは 2種類の特性を持った生成物を作成します。
+部分的なもの (rlib/staticli) と、最終的なもの (dylib/binary) です。
+
+ネイティブダイナミックライブラリとフレームワークの依存関係は、最終的な生成物の領域まで伝搬します。
+一方で、スタティックライブラリの依存関係は伝搬しません。
+スタティックライブラリは、直接次の生成物に組み込まれるからです。
+
+このモデルがどのように適用されるかをいくつかの例でみてみましょう：
 
 
+* ネイティブのビルド依存関係の例。Rust のコードを書くときに、C/C++ のグルーコードが必要となることがあります。
+  しかし、C/C++ のコードをライブラリの形式で配布するのは大変です。
+  この場合、このコードは `libfoo.a` にアーカイブされ、Rust のクレート内で依存関係を宣言します。
+  このときは、`#[link(name = "foo", kind = "static")]` という記述となります。
 
-From a linkage perspective, the Rust compiler creates
-two flavors of artifacts: partial (rlib/staticlib) and final (dylib/binary).
-Native dynamic library and framework dependencies are propagated to the final
-artifact boundary, while static library dependencies are not propagated at
-all, because the static libraries are integrated directly into the subsequent
-artifact.
+  クレートの出力の特性に関わらず、ネイティブスタティックライブラリは出力に含まれます。
+  そのため、ネイティブスタティックライブラリを配布する必要はありません。
 
-A few examples of how this model can be used are:
+* 通常の動的な依存関係の例。`readline` のような共通のシステムライブラリは、多くのシステムで利用可能です。
+  また、静的なコピーはたいていの場合見つかりません。
+  この依存関係が Rust のクレートに含まれる場合、
+  部分ターゲット（例えば rlib）はシステムライブラリにリンクしませんが、
+  バイナリのような最終的なターゲットに rlib が含まれる時には、ネイティブライブラリとリンクします。
 
-* A native build dependency. Sometimes some C/C++ glue is needed when writing
-  some Rust code, but distribution of the C/C++ code in a library format is
-  a burden. In this case, the code will be archived into `libfoo.a` and then the
-  Rust crate would declare a dependency via `#[link(name = "foo", kind =
-  "static")]`.
+MacOS では、フレームワークはダイナミックライブラリと同じように動作します。
 
-  Regardless of the flavor of output for the crate, the native static library
-  will be included in the output, meaning that distribution of the native static
-  library is not necessary.
-
-* A normal dynamic dependency. Common system libraries (like `readline`) are
-  available on a large number of systems, and often a static copy of these
-  libraries cannot be found. When this dependency is included in a Rust crate,
-  partial targets (like rlibs) will not link to the library, but when the rlib
-  is included in a final target (like a binary), the native library will be
-  linked in.
-
-On macOS, frameworks behave with the same semantics as a dynamic library.
-
-# Unsafe blocks
+# Unsafe ブロック
 
 Some operations, like dereferencing raw pointers or calling functions that have been marked
 unsafe are only allowed inside unsafe blocks. Unsafe blocks isolate unsafety and are a promise to
