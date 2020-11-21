@@ -541,36 +541,32 @@ x86_64 アーキテクチャの場合には、Windows では `C` 呼出規約が
 つまり、一つ前のサンプルにおいて、`extern "system" { ... }` を使うことにより、
 x86 だけではなく、全ての Windows に対して定義をできるということです。
 
-# 他言語コードとの相互運用性
+# 他言語コードとの相互運用
 
 Rust は `#[repr(C)]` アトリビュートが適用されている `struct` に限り、
 メモリレイアウトがプラットフォームの C 言語での表現と互換性があることが保証されます。
 `#[repr(C, packed)]` では、構造体ののメンバはパディングなしでレイアウトされます。
-`#[repr(C)]` は列挙体にも適用が可能です。
+`#[repr(C)]` は列挙型にも適用が可能です。
 
-Rust の、所有しているボックス（`Box<T>`）は null 非許容ポインタを、抱えているオブジェクトを指すハンドルとして使用します。
+Rust の所有しているボックス（`Box<T>`）は、抱えているオブジェクトを指すハンドルとして、null 非許容ポインタを使用します。
 しかしながら、そういったポインタは内部のアロケータによって管理されるため、自前で作成すべきではありません。
 参照は直接型を指す null 非許容ポインタと安全に見なすことができます。
 しかしながら、借用チェックや変更可能性ルールを破壊することは、安全が保証されません。
-そのため、
+そのため、もしコンパイラが同じだけの推測が出来ないときには、生ポインタ（`*`）を使用することが好ましいです。
 
-Rust's owned boxes (`Box<T>`) use non-nullable pointers as handles which point
-to the contained object. However, they should not be manually created because
-they are managed by internal allocators. References can safely be assumed to be
-non-nullable pointers directly to the type.  However, breaking the borrow
-checking or mutability rules is not guaranteed to be safe, so prefer using raw
+However, breaking the borrow checking or mutability rules is not guaranteed to be safe, so prefer using raw
 pointers (`*`) if that's needed because the compiler can't make as many
 assumptions about them.
 
-Vectors and strings share the same basic memory layout, and utilities are
-available in the `vec` and `str` modules for working with C APIs. However,
-strings are not terminated with `\0`. If you need a NUL-terminated string for
-interoperability with C, you should use the `CString` type in the `std::ffi`
-module.
+ベクタと文字列は同じ基本的なメモリレイアウトを持ち、`vec` モジュールと `str` モジュール内に、
+C 言語 API と組み合わせて使うための同じユーティリティを持っています。
+しかしながら、Rust の文字列は `\0` で終わりません。 
+もし C 言語との相互運用のためにヌル終端文字列が必要な場合には、
+`std::ffi` モジュールの `CString` 型を使用してください。
 
-The [`libc` crate on crates.io][libc] includes type aliases and function
-definitions for the C standard library in the `libc` module, and Rust links
-against `libc` and `libm` by default.
+[`libc` crate on crates.io][libc] の `libc` モジュールには、
+C の標準ライブラリのための、型のエイリアスや関数定義が含まれています。
+また、 Rust 自身が `libc` と `libm` をデフォルトでリンクしています。
 
 # 可変長引数関数
 
@@ -675,8 +671,8 @@ void register(void (*f)(int (*)(int), int)) {
 
 # Rust のコードを C 言語から呼び出す
 
-You may wish to compile Rust code in a way so that it can be called from C. This is
-fairly easy, but requires a few things:
+Rust のコードを、 C から呼び出せるようにコンパイルしたい場合があります。
+極めて簡単に行うことができますが、いくつか必要なことがあります：
 
 ```rust
 #[no_mangle]
@@ -685,17 +681,16 @@ pub extern "C" fn hello_rust() -> *const u8 {
 }
 # fn main() {}
 ```
+[他言語関数の呼出規約](#他言語関数の呼出規約) で扱った通り、
+`extern "C"` は、関数を C 言語の呼出規約に沿わせます。
+`no_mangle` アトリビュートは、Rust のネームマングリングを無効にし、リンクしやすくします。
 
-The `extern "C"` makes this function adhere to the C calling convention, as
-discussed above in "[Foreign Calling
-Conventions](ffi.html#foreign-calling-conventions)". The `no_mangle`
-attribute turns off Rust's name mangling, so that it is easier to link to.
+# FFI とパニック
 
-# FFI and panics
-
-It’s important to be mindful of `panic!`s when working with FFI. A `panic!`
-across an FFI boundary is undefined behavior. If you’re writing code that may
-panic, you should run it in a closure with [`catch_unwind`]:
+FFI を使用する際には `panic!` を意識することが重要です。
+FFI 境界を越えた `panic!` は未定義動作です。
+もし、パニックする可能性があるコードを書いている場合は、
+[`catch_unwind`] を伴うクロージャーの中で呼び出すのがよいでしょう：
 
 ```rust
 use std::panic::catch_unwind;
@@ -714,24 +709,22 @@ pub extern fn oh_no() -> i32 {
 fn main() {}
 ```
 
-Please note that [`catch_unwind`] will only catch unwinding panics, not
-those who abort the process. See the documentation of [`catch_unwind`]
-for more information.
+[`catch_unwind`] はプロセスを停止しない、巻き戻し中のパニックのみをキャッチすることに気をつけてください。
+詳しくは [`catch_unwind`] のドキュメントを見てください。
 
 [`catch_unwind`]: ../std/panic/fn.catch_unwind.html
 
-# Representing opaque structs
+# 不透明（opaque）な構造体を表す
 
-Sometimes, a C library wants to provide a pointer to something, but not let you
-know the internal details of the thing it wants. The simplest way is to use a
-`void *` argument:
+C 言語のライブラリでは、ｋ何かへのポインタを、必要なものの内部的な詳細を知らせずに提供したい場合があります。
+最も簡単な方法は `void *` 型の引数を使用することです：
 
 ```c
 void foo(void *arg);
 void bar(void *arg);
 ```
 
-We can represent this in Rust with the `c_void` type:
+Rust では `c_void` 型を使用してこの型を表すことができます：
 
 ```rust,ignore
 extern crate libc;
@@ -743,18 +736,20 @@ extern "C" {
 # fn main() {}
 ```
 
-This is a perfectly valid way of handling the situation. However, we can do a bit
-better. To solve this, some C libraries will instead create a `struct`, where
-the details and memory layout of the struct are private. This gives some amount
-of type safety. These structures are called ‘opaque’. Here’s an example, in C:
+これは今回のケースで完全に有効な方法ではありますが、より良くする方法があります。
+代わりに、C 言語のライブラリは、詳細とメモリレイアウトがプライベートな `struct` を作成します。
+これによってある程度の型安全性を得ることができます。
+これらの構造体は「不透明（opaque）」と呼ばれています。
+以下が C 言語での例です：
 
 ```c
-struct Foo; /* Foo is a structure, but its contents are not part of the public interface */
+struct Foo; /* Foo は構造体ですが、その中身はパブリックなインターフェースにはなっていません */
 struct Bar;
 void foo(struct Foo *arg);
 void bar(struct Bar *arg);
 ```
 
+これを Rust で行うためには、自前の不透明な型を作りましょう：
 To do this in Rust, let’s create our own opaque types:
 
 ```rust
@@ -768,18 +763,17 @@ extern "C" {
 # fn main() {}
 ```
 
-By including a private field and no constructor, 
-we create an opaque type that we can't instantiate outside of this module.
-(A struct with no field could be instantiated by anyone.)
-We also want to use this type in FFI, so we have to add `#[repr(C)]`.
-And to avoid warning around using `()` in FFI, we instead use an empty array,
-which works just as well as an empty type but is FFI-compatible.
+プライベートフィールドを持たせ、コンストラクタを持たせないことで、
+モジュールの外でインスタンスを作ることのできない、不透明な型を作ることができます。
+（なお、フィールドがない構造体はだれでもインスタンスを作ることができます。）
+私たちは FFI でもこの型を使いたいため、`#[repr(C)]` アトリビュートを追加しなくてはいけません。
+それから、FFI で `()` を使用した際の警告を避けるために、代わりに空の配列を使用します。
+空の配列は、空の型（訳注：ユニット？）と同じように動作しますが、FFI で使用可能です。
 
-But because our `Foo` and `Bar` types are
-different, we’ll get type safety between the two of them, so we cannot
-accidentally pass a pointer to `Foo` to `bar()`.
+しかし、`Foo` 型と `Bar` 型は異なる型のため、型安全性を得ることができます。
+これによって、うっかり `Foo` へのポインターを `bar()` に渡してしまうといったことが避けられます。
 
-Notice that it is a really bad idea to use an empty enum as FFI type.
-The compiler relies on empty enums being uninhabited, so handling values of type
-`&Empty` is a huge footgun and can lead to buggy program behavior (by triggering
-undefined behavior).
+空の列挙型を FFI の型として用いることは大変良くないということを覚えておいてください。
+コンパイラは、空の列挙型は中身の型が存在しないという前提に依存しているため、
+`&Empty` 型の値を扱うことは、未定義動作を引き起こし、
+バグの多い動作を生み出す、自分の足を撃ちかねない巨大な銃です。
