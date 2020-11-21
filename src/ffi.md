@@ -499,9 +499,9 @@ fn main() {
 読み込み書き込みに関わらず `static mut` に対する全ての操作は unsafe です。
 グローバルな変更可能な状態を扱う場合、最大の注意を払う必要があります。
 
-# 他言語呼び出し規約
+# 他言語関数の呼出規約
 
-多くの他言語コードは C ABI を提供します。
+多くの他言語コードは C 言語の ABI を提供します。
 Rust は他言語関数を呼び出す場合、デフォルトでプラットフォームの C 言語の呼出規約を使用します。
 他言語関数によっては、特に Windows API においては、他の呼出規約を使用する場合があります。
 Rust はコンパイラに対してどの呼出規約を使うべきかを伝える手段を提供します：
@@ -543,10 +543,16 @@ x86 だけではなく、全ての Windows に対して定義をできるとい�
 
 # 他言語コードとの相互運用性
 
-Rust guarantees that the layout of a `struct` is compatible with the platform's
-representation in C only if the `#[repr(C)]` attribute is applied to it.
-`#[repr(C, packed)]` can be used to lay out struct members without padding.
-`#[repr(C)]` can also be applied to an enum.
+Rust は `#[repr(C)]` アトリビュートが適用されている `struct` に限り、
+メモリレイアウトがプラットフォームの C 言語での表現と互換性があることが保証されます。
+`#[repr(C, packed)]` では、構造体ののメンバはパディングなしでレイアウトされます。
+`#[repr(C)]` は列挙体にも適用が可能です。
+
+Rust の、所有しているボックス（`Box<T>`）は null 非許容ポインタを、抱えているオブジェクトを指すハンドルとして使用します。
+しかしながら、そういったポインタは内部のアロケータによって管理されるため、自前で作成すべきではありません。
+参照は直接型を指す null 非許容ポインタと安全に見なすことができます。
+しかしながら、借用チェックや変更可能性ルールを破壊することは、安全が保証されません。
+そのため、
 
 Rust's owned boxes (`Box<T>`) use non-nullable pointers as handles which point
 to the contained object. However, they should not be manually created because
@@ -568,8 +574,8 @@ against `libc` and `libm` by default.
 
 # 可変長引数関数
 
-In C, functions can be 'variadic', meaning they accept a variable number of arguments. This can
-be achieved in Rust by specifying `...` within the argument list of a foreign function declaration:
+C 言語では、関数が可変長引数を取ることができます。
+Rust では他言語の関数の宣言時に引数の最後に `...` を明記することで、可変長引数関数を宣言できます：
 
 ```no_run
 extern {
@@ -583,10 +589,10 @@ fn main() {
 }
 ```
 
-Normal Rust functions can *not* be variadic:
+ただし、通常の Rust の関数は可変長引数関数には*できません*：
 
 ```ignore
-// This will not compile
+// これはコンパイルできません
 
 fn foo(x: i32, ...) { }
 ```
