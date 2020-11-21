@@ -2,7 +2,7 @@
 
 # イントロダクション
 
-このガイドでは、他言語で書かれたコードのバインディングの書き方を紹介するために、
+このガイドでは、他言語で書かれたコードに対するバインディングの書き方を紹介するために、
 圧縮・解凍ライブラリである [snappy](https://github.com/google/snappy) を使用します。
 Rust は現時点では C++ のライブラリを直接呼び出すことができませんが、snappy は C言語のインターフェースを持っています。
 (snappy の C言語のインターフェースは [`snappy-c.h`](https://github.com/google/snappy/blob/master/snappy-c.h) でドキュメント化されています。)
@@ -38,7 +38,7 @@ extern {
 
 fn main() {
     let x = unsafe { snappy_max_compressed_length(100) };
-    println!("max compressed length of a 100 byte buffer: {}", x);
+    println!("100 バイトのバッファを圧縮したときの最大サイズ: {}", x);
 }
 ```
 
@@ -273,7 +273,7 @@ extern {
 fn main() {
     unsafe {
         register_callback(callback);
-        trigger_callback(); // Triggers the callback.
+        trigger_callback(); // コールバックをトリガーする
     }
 }
 ```
@@ -290,7 +290,7 @@ int32_t register_callback(rust_callback callback) {
 }
 
 void trigger_callback() {
-  cb(7); // Will call callback(7) in Rust.
+  cb(7); // Rust 側の callback(7) が呼び出される。
 }
 ```
 
@@ -300,7 +300,7 @@ void trigger_callback() {
 ## Rust のオブジェクトに対するコールバック
 
 これまでのサンプルでは、グローバルな関数を C から呼び出す方法を用いていました。
-しかし、特別な Rust のオブジェクトに対してコールバックを呼び出したいというのは良くあることです。
+しかし、特定の Rust のオブジェクトに対してコールバックを呼び出したいというのは良くあることです。
 
 The former example showed how a global function can be called from C code.
 However it is often desired that the callback is targeted to a special
@@ -326,7 +326,7 @@ struct RustObject {
 extern "C" fn callback(target: *mut RustObject, a: i32) {
     println!("I'm called from C with value {0}", a);
     unsafe {
-        // Update the value in RustObject with the value received from the callback:
+        // RustObject の値をコールバックから受け取った値で更新する:
         (*target).a = a;
     }
 }
@@ -339,7 +339,7 @@ extern {
 }
 
 fn main() {
-    // Create the object that will be referenced in the callback:
+    // コールバック内から参照されるオブジェクトを作成する:
     let mut rust_object = Box::new(RustObject { a: 5 });
 
     unsafe {
@@ -363,55 +363,62 @@ int32_t register_callback(void* callback_target, rust_callback callback) {
 }
 
 void trigger_callback() {
-  cb(cb_target, 7); // Will call callback(&rustObject, 7) in Rust.
+  cb(cb_target, 7); // Rust 側の callback(&rustObject, 7) が呼び出される。
 }
 ```
 
 ## 非同期コールバック
 
-In the previously given examples the callbacks are invoked as a direct reaction
-to a function call to the external C library.
-The control over the current thread is switched from Rust to C to Rust for the
-execution of the callback, but in the end the callback is executed on the
-same thread that called the function which triggered the callback.
+前のサンプルでは、コールバックは外部の C 言語ライブラリの関数を呼び出した時の直接的な応答として呼び出されていました。
+つまり、現在のスレッドの制御は Rust から C へと切り替わった後、コールバックを実行するため Rust へと切り替わりますが、
+最終的にコールバックは最初の呼び出しと同じスレッドで呼び出されます。
 
-Things get more complicated when the external library spawns its own threads
-and invokes callbacks from there.
-In these cases access to Rust data structures inside the callbacks is
-especially unsafe and proper synchronization mechanisms must be used.
-Besides classical synchronization mechanisms like mutexes, one possibility in
-Rust is to use channels (in `std::sync::mpsc`) to forward data from the C
-thread that invoked the callback into a Rust thread.
+外部のライブラリが自前でスレッドを生成し、そこからコールバックを呼び出す場合、もっと複雑になります。
+これらの場合には、コールバック内での Rust のデータ構造へのアクセスは特に危険なため、適切な同期の仕組みが必要となります。
+Rust では、ミューテックスといった古典的な同期の仕組みに加えて、チャンネル（`std::sync::mpsc`）を用いることで、
+コールバックを呼び出した C のスレッドから Rust のスレッドへとデータを送ることができます。
 
+もし、非同期コールバックが Rust のアドレス空間の特定のオブジェクトを対象とする場合、
+Rust のオブジェクトが破棄された後にコールバックが絶対に呼び出されないようにする必要があります。
 If an asynchronous callback targets a special object in the Rust address space
 it is also absolutely necessary that no more callbacks are performed by the
 C library after the respective Rust object gets destroyed.
-This can be achieved by unregistering the callback in the object's
-destructor and designing the library in a way that guarantees that no
-callback will be performed after deregistration.
+
+これを達成するためには、オブジェクトのデストラクタでコールバックの登録を解除し、
+登録解除後にコールバックが呼び出されないことを保証できるようにライブラリを設計しなくてはいけません。
+
 
 # リンク
 
+`extern` ブロックの `link` アトリビュートは、
+rustc に対して、どのようにネイティブライブラリとリンクすれば良いかを指示するための、基本構造を提供します。
+
 The `link` attribute on `extern` blocks provides the basic building block for
-instructing rustc how it will link to native libraries. There are two accepted
-forms of the link attribute today:
+instructing rustc how it will link to native libraries.
+
+link アトリビュートは現在のところ 2通りの書き方ができます：
 
 * `#[link(name = "foo")]`
 * `#[link(name = "foo", kind = "bar")]`
 
-In both of these cases, `foo` is the name of the native library that we're
-linking to, and in the second case `bar` is the type of native library that the
-compiler is linking to. There are currently three known types of native
-libraries:
+どちらの場合も `foo` はリンクするネイティブライブラリの名前を表し、
+2つ目の例の `bar` は、リンクするネイティブライブラリのタイプを表します。
+ネイティブライブラリのタイプは、現在のところ、以下の 3つが存在します：
 
-* Dynamic - `#[link(name = "readline")]`
-* Static - `#[link(name = "my_build_dependency", kind = "static")]`
-* Frameworks - `#[link(name = "CoreFoundation", kind = "framework")]`
+* 動的（Dynamic） - `#[link(name = "readline")]`
+* 静的（Static） - `#[link(name = "my_build_dependency", kind = "static")]`
+* フレームワーク（Frameworks） - `#[link(name = "CoreFoundation", kind = "framework")]`
 
-Note that frameworks are only available on macOS targets.
+framework は MacOS ターゲットでのみ有効です。
+
+`kind` の値によって、ネイティブライブラリがどのようにリンクされるかが変わります。
 
 The different `kind` values are meant to differentiate how the native library
-participates in linkage. From a linkage perspective, the Rust compiler creates
+participates in linkage.
+
+
+
+From a linkage perspective, the Rust compiler creates
 two flavors of artifacts: partial (rlib/staticlib) and final (dylib/binary).
 Native dynamic library and framework dependencies are propagated to the final
 artifact boundary, while static library dependencies are not propagated at
