@@ -566,7 +566,7 @@ The [`libc` crate on crates.io][libc] includes type aliases and function
 definitions for the C standard library in the `libc` module, and Rust links
 against `libc` and `libm` by default.
 
-# Variadic functions
+# 可変長引数関数
 
 In C, functions can be 'variadic', meaning they accept a variable number of arguments. This can
 be achieved in Rust by specifying `...` within the argument list of a foreign function declaration:
@@ -591,13 +591,21 @@ Normal Rust functions can *not* be variadic:
 fn foo(x: i32, ...) { }
 ```
 
-# The "nullable pointer optimization"
+# 「null 許容ポインタ最適化」
 
-Certain Rust types are defined to never be `null`. This includes references (`&T`,
-`&mut T`), boxes (`Box<T>`), and function pointers (`extern "abi" fn()`). When
-interfacing with C, pointers that might be `null` are often used, which would seem to
-require some messy `transmute`s and/or unsafe code to handle conversions to/from Rust types.
-However, the language provides a workaround.
+特定の Rust の型は絶対に `null` にならないと定義されています。
+これには参照（`&T`, `&mut T`）、ボックス（`Box<T>`）、関数ポインタ（`extern "abi" fn()`）が含まれます。
+C とつなぎ合わせる場合、`null` になる可能性のあるポインタがよく使われますが、
+そういったポインタでは、厄介な `transmute` や unsafe コードを使って、
+Rust の型への、もしくは、Rust の型からの変換を扱う必要があります。
+しかしながら、Rust にはこの問題に対するワークアラウンドがあります。
+
+ある特定の場合で `enum` は「null 許容ポインタ最適化」に使用することができます。
+特定の場合とは `enum` が丁度 2つの variant を持っていて、そのうち 1つはデータを持たず、
+もう 1つは、先ほど述べた Null 非許容型のフィールドを持っている場合です。
+これは判別のための余分なスペースが必要ないということであり、
+null 非許容フィールドに `null` 値を置くことによって空の variant が表されます。？
+これは「最適化」と呼ばれていますが、他の最適化と異なり、資格のある型に適用されるという保証があります。
 
 As a special case, an `enum` is eligible for the "nullable pointer optimization" if it contains
 exactly two variants, one of which contains no data and the other contains a field of one of the
@@ -606,10 +614,13 @@ the empty variant is represented by putting a `null` value into the non-nullable
 called an "optimization", but unlike other optimizations it is guaranteed to apply to eligible
 types.
 
-The most common type that takes advantage of the nullable pointer optimization is `Option<T>`,
-where `None` corresponds to `null`. So `Option<extern "C" fn(c_int) -> c_int>` is a correct way
-to represent a nullable function pointer using the C ABI (corresponding to the C type
-`int (*)(int)`).
+Null 許容ポインタ最適化を利用するもっとも一般的な型は `Option<T>` です。`None` が `null` に対応します。
+`Option<extern "C" fn(c_int) -> c_int>` は、 C 言語 ABI を使用する上で、Null 許容関数ポインタを表す正しい方法です。
+（これは C の型でいう `int (*)(int)`に対応します。）
+
+これは不自然なサンプルです。C のライブラリがコールバックを登録する機能を持っていて、特定の場面で呼び出されるとしましょう。
+コールバックは関数ポインタと整数を渡し、その関数はその整数を引数として呼び出されると考えられます。
+つまり、関数ポインタが FFI の境界を双方向に飛び越えることになります。
 
 Here is a contrived example. Let's say some C library has a facility for registering a
 callback, which gets called in certain situations. The callback is passed a function pointer
@@ -622,16 +633,16 @@ use libc::c_int;
 
 # #[cfg(hidden)]
 extern "C" {
-    /// Registers the callback.
+    /// コールバックを登録する。
     fn register(cb: Option<extern "C" fn(Option<extern "C" fn(c_int) -> c_int>, c_int) -> c_int>);
 }
 # unsafe fn register(_: Option<extern "C" fn(Option<extern "C" fn(c_int) -> c_int>,
 #                                            c_int) -> c_int>)
 # {}
 
-/// This fairly useless function receives a function pointer and an integer
-/// from C, and returns the result of calling the function with the integer.
-/// In case no function is provided, it squares the integer by default.
+/// この極めて無意味な関数は、関数ポインタと整数を C 側から受け取り、
+/// 渡された整数を引数として関数を実行し、その結果を返す。
+/// もし関数が渡されなかった場合、デフォルトの動作として整数を二乗して返す。
 extern "C" fn apply(process: Option<extern "C" fn(c_int) -> c_int>, int: c_int) -> c_int {
     match process {
         Some(f) => f(int),
@@ -646,7 +657,7 @@ fn main() {
 }
 ```
 
-And the code on the C side looks like this:
+C 側のコードはこのようになります：
 
 ```c
 void register(void (*f)(int (*)(int), int)) {
@@ -654,9 +665,9 @@ void register(void (*f)(int (*)(int), int)) {
 }
 ```
 
-No `transmute` required!
+`transmute` は必要ありません！
 
-# Calling Rust code from C
+# Rust のコードを C 言語から呼び出す
 
 You may wish to compile Rust code in a way so that it can be called from C. This is
 fairly easy, but requires a few things:
