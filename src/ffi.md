@@ -422,7 +422,6 @@ framework は MacOS ターゲットでのみ有効です。
 
 このモデルがどのように適用されるかをいくつかの例でみてみましょう：
 
-
 * ネイティブのビルド依存関係の例。Rust のコードを書くときに、C/C++ のグルーコードが必要となることがあります。
   しかし、C/C++ のコードをライブラリの形式で配布するのは大変です。
   この場合、このコードは `libfoo.a` にアーカイブされ、Rust のクレート内で依存関係を宣言します。
@@ -439,26 +438,23 @@ framework は MacOS ターゲットでのみ有効です。
 
 MacOS では、フレームワークはダイナミックライブラリと同じように動作します。
 
-# Unsafe ブロック
+# unsafe ブロック
 
-Some operations, like dereferencing raw pointers or calling functions that have been marked
-unsafe are only allowed inside unsafe blocks. Unsafe blocks isolate unsafety and are a promise to
-the compiler that the unsafety does not leak out of the block.
-
-Unsafe functions, on the other hand, advertise it to the world. An unsafe function is written like
-this:
+一部の操作、たとえば生ポインターの参照外しや、unsafe とマークされた関数を呼び出すといったものは、unsafe ブロックの内側でのみ許可されています。
+unsafe ブロックは危険性を分離し、その危険性がブロックの外に漏れ出ないということをコンパイラーと約束します。
+一方で、unsafe な関数は自分は危険であると外の世界に伝えます。
+unsafe な関数は以下のように書かれます：
 
 ```rust
 unsafe fn kaboom(ptr: *const i32) -> i32 { *ptr }
 ```
 
-This function can only be called from an `unsafe` block or another `unsafe` function.
+この関数は、`unsafe` ブロックまたは、別の `unsafe` な関数からしか呼び出せません。
 
-# Accessing foreign globals
+# 他言語のグローバル変数にアクセスする
 
-Foreign APIs often export a global variable which could do something like track
-global state. In order to access these variables, you declare them in `extern`
-blocks with the `static` keyword:
+他言語の API はよくグローバル変数へのアクセスを提供します。これはグローバルな状態を追跡する場合などに使われます。
+こういった変数にアクセスするためには、編巣を `extern` ブロック内部で `static` キーワードを付けて宣言します：
 
 ```rust,ignore
 extern crate libc;
@@ -469,14 +465,13 @@ extern {
 }
 
 fn main() {
-    println!("You have readline version {} installed.",
+    println!("readline バージョン {} がインストールされています。",
              unsafe { rl_readline_version as i32 });
 }
 ```
 
-Alternatively, you may need to alter global state provided by a foreign
-interface. To do this, statics can be declared with `mut` so we can mutate
-them.
+または、他言語インターフェースによって提供されるグローバルな状態を変更する必要があるかもしれません。
+そういった場合には、`static` に `mut` を付けて宣言することで、変更が可能になります。
 
 ```rust,ignore
 extern crate libc;
@@ -501,14 +496,15 @@ fn main() {
 }
 ```
 
-Note that all interaction with a `static mut` is unsafe, both reading and
-writing. Dealing with global mutable state requires a great deal of care.
+読み込み書き込みに関わらず `static mut` に対する全ての操作は unsafe です。
+グローバルな変更可能な状態を扱う場合、最大の注意を払う必要があります。
 
-# Foreign calling conventions
+# 他言語呼び出し規約
 
-Most foreign code exposes a C ABI, and Rust uses the platform's C calling convention by default when
-calling foreign functions. Some foreign functions, most notably the Windows API, use other calling
-conventions. Rust provides a way to tell the compiler which convention to use:
+多くの他言語コードは C ABI を提供します。
+Rust は他言語関数を呼び出す場合、デフォルトでプラットフォームの C 言語の呼出規約を使用します。
+他言語関数によっては、特に Windows API においては、他の呼出規約を使用する場合があります。
+Rust はコンパイラに対してどの呼出規約を使うべきかを伝える手段を提供します：
 
 ```rust,ignore
 extern crate libc;
@@ -522,15 +518,15 @@ extern "stdcall" {
 # fn main() { }
 ```
 
-This applies to the entire `extern` block. The list of supported ABI constraints
-are:
+これは `extern` ブロック全体に適用されます。
+対応している ABI 呼び出し規約は以下の通りです：
 
 * `stdcall`
 * `aapcs`
 * `cdecl`
 * `fastcall`
 * `vectorcall`
-This is currently hidden behind the `abi_vectorcall` gate and is subject to change.
+これは現在は `abi_vectorcall` ゲートの裏に隠されており、変更される可能性があります。
 * `Rust`
 * `rust-intrinsic`
 * `system`
@@ -538,15 +534,14 @@ This is currently hidden behind the `abi_vectorcall` gate and is subject to chan
 * `win64`
 * `sysv64`
 
-Most of the abis in this list are self-explanatory, but the `system` abi may
-seem a little odd. This constraint selects whatever the appropriate ABI is for
-interoperating with the target's libraries. For example, on win32 with a x86
-architecture, this means that the abi used would be `stdcall`. On x86_64,
-however, windows uses the `C` calling convention, so `C` would be used. This
-means that in our previous example, we could have used `extern "system" { ... }`
-to define a block for all windows systems, not only x86 ones.
+このリストの多くの ABI 呼出規約は名前から分かる通りですが、`system` は少しおかしく感じるかも知れません。
+この呼出規約は、ターゲットとする環境のライブラリを相互運用する上で適切な ABI を選択します。
+たとえば、 x86 アーキテクチャの Win32 では、`stdcall` が使用され、
+x86_64 アーキテクチャの場合には、Windows では `C` 呼出規約が使用されるため、`C` が選択されます。
+つまり、一つ前のサンプルにおいて、`extern "system" { ... }` を使うことにより、
+x86 だけではなく、全ての Windows に対して定義をできるということです。
 
-# Interoperability with foreign code
+# 他言語コードとの相互運用性
 
 Rust guarantees that the layout of a `struct` is compatible with the platform's
 representation in C only if the `#[repr(C)]` attribute is applied to it.
