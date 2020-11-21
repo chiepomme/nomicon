@@ -1,18 +1,17 @@
-# Foreign Function Interface
+# 他言語関数インターフェース FFI
 
-# Introduction
+# イントロダクション
 
-This guide will use the [snappy](https://github.com/google/snappy)
-compression/decompression library as an introduction to writing bindings for
-foreign code. Rust is currently unable to call directly into a C++ library, but
-snappy includes a C interface (documented in
-[`snappy-c.h`](https://github.com/google/snappy/blob/master/snappy-c.h)).
+このガイドでは、他言語で書かれたコードのバインディングの書き方を紹介するために、
+圧縮・解凍ライブラリである [snappy](https://github.com/google/snappy) を使用します。
+Rust は現時点では C++ のライブラリを直接呼び出すことができませんが、snappy は C言語のインターフェースを持っています。
+(snappy の C言語のインターフェースは [`snappy-c.h`](https://github.com/google/snappy/blob/master/snappy-c.h) でドキュメント化されています。)
 
-## A note about libc
+## libc についてのメモ
 
-Many of these examples use [the `libc` crate][libc], which provides various
-type definitions for C types, among other things. If you’re trying these
-examples yourself, you’ll need to add `libc` to your `Cargo.toml`:
+これらのサンプルコードの多くは [`libc` クレート][libc] を使用しています。
+`libc` クレートは、その機能の一部として様々な C言語の型の定義を提供してくれます。
+もしサンプルコードを動かす場合には、`Cargo.toml` に `libc` を加える必要があるでしょう。
 
 ```toml
 [dependencies]
@@ -21,12 +20,12 @@ libc = "0.2.0"
 
 [libc]: https://crates.io/crates/libc
 
-and add `extern crate libc;` to your crate root.
+それから、`extern crate libc;` をクレートのルートに追加してください。
+（訳注：Rust 2018 Edition では必要ありません。）
 
-## Calling foreign functions
+## 他言語の関数を呼び出す
 
-The following is a minimal example of calling a foreign function which will
-compile if snappy is installed:
+これは他言語の関数を呼び出す最小のサンプルです。snappy がインストールされている場合にコンパイルできます。
 
 ```rust,ignore
 extern crate libc;
@@ -43,23 +42,23 @@ fn main() {
 }
 ```
 
-The `extern` block is a list of function signatures in a foreign library, in
-this case with the platform's C ABI. The `#[link(...)]` attribute is used to
-instruct the linker to link against the snappy library so the symbols are
-resolved.
+`extern` ブロックは、他言語のライブラリが持つ関数のシグネチャのリストです。
+この場合はプラットフォームの C ABI に基づきます。
 
-Foreign functions are assumed to be unsafe so calls to them need to be wrapped
-with `unsafe {}` as a promise to the compiler that everything contained within
-truly is safe. C libraries often expose interfaces that aren't thread-safe, and
-almost any function that takes a pointer argument isn't valid for all possible
-inputs since the pointer could be dangling, and raw pointers fall outside of
-Rust's safe memory model.
+`#[link(...)]` アトリビュートは、リンカに snappy のライブラリとリンクすることを指示します。
+これによってシンボルが解決できるようになります。
 
-When declaring the argument types to a foreign function, the Rust compiler
-cannot check if the declaration is correct, so specifying it correctly is part
-of keeping the binding correct at runtime.
+他言語関数は unsafe と見なされるため、 `unsafe {}` で囲う必要があります。
+そうすることで、このブロックの中は完全に安全だということをコンパイラーに伝えます。
 
-The `extern` block can be extended to cover the entire snappy API:
+C言語のライブラリは、スレッドセーフではないインターフェースを公開していることが多くあります。
+また、ポインタを引数に取るほぼ全ての関数が、どんな入力が来ても安全である、とはいえません。全てのポインタはダングリングポインタの可能性があるためです。
+更に、生ポインタは Rust の安全なメモリ管理モデルから外れてしまいます。
+
+他言語の関数に対して引数の型を宣言する場合、Rust コンパイラーはその宣言が正しいかどうかを検証できません。
+正しく型を明記することは、実行時にバインディングが正しく動作するために必要なことです。
+
+先ほどの `extern` ブロックを、snappy の API を網羅するように拡張でき、その場合、以下のようになります。
 
 ```rust,ignore
 extern crate libc;
@@ -85,16 +84,16 @@ extern {
 # fn main() {}
 ```
 
-# Creating a safe interface
+# 安全なインターフェースを作る
 
-The raw C API needs to be wrapped to provide memory safety and make use of higher-level concepts
-like vectors. A library can choose to expose only the safe, high-level interface and hide the unsafe
-internal details.
+メモリ安全性、それから、ベクタのような高レベルな概念を提供するためには、生の C API をラップする必要があります。
+ライブラリは、安全で高レベルなインターフェースのみを公開し、安全ではない内部的な実装の詳細を隠すという選択肢もあります。
 
-Wrapping the functions which expect buffers involves using the `slice::raw` module to manipulate Rust
-vectors as pointers to memory. Rust's vectors are guaranteed to be a contiguous block of memory. The
-length is the number of elements currently contained, and the capacity is the total size in elements of
-the allocated memory. The length is less than or equal to the capacity.
+バッファが必要な関数関数をラップする際には、`slice::raw` モジュールを使用して、 Rust のベクタをメモリに対するポインタとして操作することができます。
+（訳注：Rust 1.48.0 ではそのようなモジュールが見当たりませんでした。）
+Rust のベクタは、連続したメモリ領域であることが保証されています。
+ベクタの length は現在保持している要素の数、capacity は確保したメモリの総量を要素の数で表したものです。
+length は必ず capacity 以下になります。
 
 ```rust,ignore
 # extern crate libc;
@@ -108,17 +107,17 @@ pub fn validate_compressed_buffer(src: &[u8]) -> bool {
 }
 ```
 
-The `validate_compressed_buffer` wrapper above makes use of an `unsafe` block, but it makes the
-guarantee that calling it is safe for all inputs by leaving off `unsafe` from the function
-signature.
+上記の `validate_compressed_buffer` のラッパーは、関数のシグネチャに `unsafe` を付けずに、
+`unsafe` ブロックを使用することで、全ての入力に対して安全であると言う保証をしています。
 
-The `snappy_compress` and `snappy_uncompress` functions are more complex, since a buffer has to be
-allocated to hold the output too.
+`snappy_compress` 関数と `snappy_uncompress` 関数は、
+出力を受けとるためのバッファも必要なため、より複雑になります。
 
-The `snappy_max_compressed_length` function can be used to allocate a vector with the maximum
-required capacity to hold the compressed output. The vector can then be passed to the
-`snappy_compress` function as an output parameter. An output parameter is also passed to retrieve
-the true length after compression for setting the length.
+`snappy_max_compressed_length` 関数は、圧縮後の最大のサイズを返すものです。
+圧縮の出力を受け取るのに使用するベクタを作る際に、必要な容量を確保するために使用します。
+ここで確保されたベクタは`snappy_compress` 関数に、出力のための引数として渡されます。
+
+圧縮後の実際のサイズを受け取るのにも、出力のための引数が使用されています。
 
 ```rust,ignore
 # extern crate libc;
@@ -143,8 +142,9 @@ pub fn compress(src: &[u8]) -> Vec<u8> {
 }
 ```
 
-Decompression is similar, because snappy stores the uncompressed size as part of the compression
-format and `snappy_uncompressed_length` will retrieve the exact buffer size required.
+解凍も同様の手順で行えます。snappy は圧縮前のサイズ情報を圧縮後のバイナリに含んでおり、
+`snappy_uncompressed_length` によって、事前に正確なサイズを知ることができるためです。
+
 
 ```rust,ignore
 # extern crate libc;
@@ -178,7 +178,7 @@ pub fn uncompress(src: &[u8]) -> Option<Vec<u8>> {
 }
 ```
 
-Then, we can add some tests to show how to use them.
+次に、これらの関数の使い方を示すために、テストを書いてみましょう。
 
 ```rust,ignore
 # extern crate libc;
@@ -234,28 +234,30 @@ mod tests {
 }
 ```
 
-# Destructors
+# デストラクタ
 
-Foreign libraries often hand off ownership of resources to the calling code.
-When this occurs, we must use Rust's destructors to provide safety and guarantee
-the release of these resources (especially in the case of panic).
+他言語のライブラリは多くの場合、コードを呼び出すためにリソースの所有権を手放します。
+このような場合には、安全性の確保とリソースの破棄を確実に行えるように Rust のデストラクタを使用する必要があります。（特にパニックする場合。）
+デストラクタについて詳しくは [Drop トレイト](../std/ops/trait.Drop.html) を参照してください。
 
-For more about destructors, see the [Drop trait](../std/ops/trait.Drop.html).
+# C の関数から Rust の関数へのコールバック
 
-# Callbacks from C code to Rust functions
+外部のライブラリによっては、現在の状態や中間データを呼び出し元に返すために、コールバックを必要とする場合があります。
+その際には Rust 側で定義した関数を、外部のライブラリに渡すことが可能です。
+コールバック関数に、正しい呼び出し規約に基づいて `extern` という印を付けることで、C から呼び出しが可能になります。
 
-Some external libraries require the usage of callbacks to report back their
-current state or intermediate data to the caller.
 It is possible to pass functions defined in Rust to an external library.
 The requirement for this is that the callback function is marked as `extern`
 with the correct calling convention to make it callable from C code.
 
+コールバック関数は、コールバック登録関数で C ライブラリに渡し、その後 C 言語内から呼び出すといった使い方が可能でしょう。
+
 The callback function can then be sent through a registration call
 to the C library and afterwards be invoked from there.
 
-A basic example is:
+以下は標準的なサンプルです：
 
-Rust code:
+Rust のコード:
 
 ```rust,no_run
 extern fn callback(a: i32) {
@@ -276,7 +278,7 @@ fn main() {
 }
 ```
 
-C code:
+C 言語のコード:
 
 ```c
 typedef void (*rust_callback)(int32_t);
@@ -292,23 +294,27 @@ void trigger_callback() {
 }
 ```
 
-In this example Rust's `main()` will call `trigger_callback()` in C,
-which would, in turn, call back to `callback()` in Rust.
+このサンプルでは、Rust 側の `main()` が C 側の `trigger_callback()` を呼び出し、
+それに応じて C 側は Rust 側の `callback()` をコールバックします。
 
+## Rust のオブジェクトに対するコールバック
 
-## Targeting callbacks to Rust objects
+これまでのサンプルでは、グローバルな関数を C から呼び出す方法を用いていました。
+しかし、特別な Rust のオブジェクトに対してコールバックを呼び出したいというのは良くあることです。
 
 The former example showed how a global function can be called from C code.
 However it is often desired that the callback is targeted to a special
-Rust object. This could be the object that represents the wrapper for the
+Rust object.
+
+？これは、C のオブジェクトに対するラッパーとなるオブジェクトを用いて行えます。
+This could be the object that represents the wrapper for the
 respective C object.
 
-This can be achieved by passing a raw pointer to the object down to the
-C library. The C library can then include the pointer to the Rust object in
-the notification. This will allow the callback to unsafely access the
-referenced Rust object.
+これは、オブジェクトに対する生ポインタを C のライブラリに渡すことで達成が可能です。
+C のライブラリは、この Rust のオブジェクトへのポインタを通知（コールバック）に含められます。
+これによって、安全ではないものの、参照された Rust のオブジェクトにコールバック関数内からアクセスすることができます。
 
-Rust code:
+Rust のコード：
 
 ```rust,no_run
 #[repr(C)]
@@ -343,7 +349,7 @@ fn main() {
 }
 ```
 
-C code:
+C のコード：
 
 ```c
 typedef void (*rust_callback)(void*, int32_t);
@@ -361,7 +367,7 @@ void trigger_callback() {
 }
 ```
 
-## Asynchronous callbacks
+## 非同期コールバック
 
 In the previously given examples the callbacks are invoked as a direct reaction
 to a function call to the external C library.
@@ -384,7 +390,7 @@ This can be achieved by unregistering the callback in the object's
 destructor and designing the library in a way that guarantees that no
 callback will be performed after deregistration.
 
-# Linking
+# リンク
 
 The `link` attribute on `extern` blocks provides the basic building block for
 instructing rustc how it will link to native libraries. There are two accepted
